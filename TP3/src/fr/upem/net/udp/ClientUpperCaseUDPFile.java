@@ -83,7 +83,7 @@ public class ClientUpperCaseUDPFile {
                 String upperCased;
                 do {
                     dc.send(UTF8.encode(line), server);
-                    upperCased = queue.poll(1000, TimeUnit.MILLISECONDS);
+                    upperCased = queue.poll(timeout, TimeUnit.MILLISECONDS);
                 } while (upperCased == null);
                 upperCaseLines.add(upperCased);
             }
