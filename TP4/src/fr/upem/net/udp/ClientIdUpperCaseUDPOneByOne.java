@@ -48,16 +48,49 @@ public class ClientIdUpperCaseUDPOneByOne {
         dc.bind(null);
     }
 
-    private void listenerThreadRun(){
-       // TODO Listener thread run	 
-	 }
+    private void listenerThreadRun() {
+        ByteBuffer buff = ByteBuffer.allocate(BUFFER_SIZE);
+        try {
+            while (! Thread.interrupted()) {
+                buff.clear();
+                dc.receive(buff);
+                buff.flip();
+                queue.put(new Response(buff.getLong(), UTF8.decode(buff).toString()));
+            }
+        } catch (AsynchronousCloseException | InterruptedException e) {
+            logger.info("Listener thread stopped");
+        } catch (IOException e) {
+            logger.severe("Unexpected close of the listener thread");
+        }
+    }
 
 
+    // Structure du main
+    /*
+    while (true) {
+        long currentTime = System.currentMillis();
+        if (currentTime - lastSend >= timeout) {
+            dc.send();
+            lastSend = currentTime;
+        }
+        msg = queue.poll(timeout - (currentTime - lastSend));
+        ...
+     */
 
+    private void launch() throws IOException, InterruptedException {
+        Thread listenerThread = new Thread(this::listenerThreadRun);
+        listenerThread.start();
 
+        //TODO
+
+        Files.write(Paths.get(outFilename), upperCaseLines, UTF8,
+                StandardOpenOption.CREATE,
+                StandardOpenOption.WRITE,
+                StandardOpenOption.TRUNCATE_EXISTING);
+    }
 
     public static void main(String[] args) throws IOException, InterruptedException {
-        if (args.length !=5) {
+        if (args.length != 5) {
             usage();
             return;
         }
@@ -76,20 +109,6 @@ public class ClientIdUpperCaseUDPOneByOne {
         client.launch();
 
     }
-
-    private void launch() throws IOException, InterruptedException {
-        Thread listenerThread = new Thread(this::listenerThreadRun);
-        listenerThread.start();
-
-		  //TODO
-
-        Files.write(Paths.get(outFilename), upperCaseLines, UTF8,
-                StandardOpenOption.CREATE,
-                StandardOpenOption.WRITE,
-                StandardOpenOption.TRUNCATE_EXISTING);
-    }
-
-
 
     private static class Response {
         long id;
