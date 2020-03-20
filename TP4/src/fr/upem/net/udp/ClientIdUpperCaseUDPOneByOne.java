@@ -81,7 +81,40 @@ public class ClientIdUpperCaseUDPOneByOne {
         Thread listenerThread = new Thread(this::listenerThreadRun);
         listenerThread.start();
 
-        //TODO
+        ByteBuffer request = ByteBuffer.allocate(BUFFER_SIZE);
+        int id = 0;
+        long lastSend, currentTime;
+        boolean hasSend;
+        lastSend = System.currentTimeMillis();
+        for (String line : lines) {
+            hasSend = false;
+            System.out.println(request);
+            request.clear();
+            request.putLong(id);
+            request.put(UTF8.encode(line));
+            while (! hasSend) {
+                currentTime = System.currentTimeMillis();
+                if (currentTime - lastSend >= timeout) {
+                    request.flip();
+                    System.out.println("Resend request : " + request);
+                    dc.send(request, serverAddress);
+                    lastSend = currentTime;
+                }
+
+                Response response = queue.poll(timeout - (currentTime - lastSend), TimeUnit.MILLISECONDS);
+                if (response != null) {
+                    if (response.id == id) {
+                        hasSend = true;
+                        System.out.println("Got response : " + response.id + " - " + response.msg);
+                        upperCaseLines.add(response.msg);
+                    }
+                    else {
+                        System.out.println("Received response with wrong id : " + response.id);
+                    }
+                }
+            }
+            ++id;
+        }
 
         Files.write(Paths.get(outFilename), upperCaseLines, UTF8,
                 StandardOpenOption.CREATE,
