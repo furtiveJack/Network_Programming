@@ -61,11 +61,12 @@ public class ServerEchoPlus {
             return;
         }
         buff.flip();
+        incBuffer();
         key.interestOps(SelectionKey.OP_WRITE);
     }
 
     private void doWrite(SelectionKey key) throws IOException {
-        incBuffer();
+
         dc.send(buff, exp);
         if (buff.hasRemaining()) {
             return;

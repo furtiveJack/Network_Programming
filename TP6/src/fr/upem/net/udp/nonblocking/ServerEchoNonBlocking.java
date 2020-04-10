@@ -8,7 +8,6 @@ import java.nio.ByteBuffer;
 import java.nio.channels.DatagramChannel;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
-import java.util.Set;
 import java.util.logging.Logger;
 
 public class ServerEchoNonBlocking {

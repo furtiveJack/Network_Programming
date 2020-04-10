@@ -3,12 +3,11 @@ package fr.upem.net.udp.nonblocking;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.InetSocketAddress;
-import java.net.SocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.DatagramChannel;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
-import java.util.HashMap;
+import java.util.Objects;
 import java.util.logging.Logger;
 
 public class ServerEchoMultiPort {
@@ -16,17 +15,41 @@ public class ServerEchoMultiPort {
     private final static Logger logger = Logger.getLogger(ServerEchoMultiPort.class.getName());
 
     static class Context {
-        final ByteBuffer buff = ByteBuffer.allocateDirect(BUFFER_SIZE);
-        SocketAddress exp;
-        int port;
+        private final ByteBuffer buff = ByteBuffer.allocateDirect(BUFFER_SIZE);
+        private InetSocketAddress exp;
+        private SelectionKey key;
+        private DatagramChannel dc;
 
-        public Context(int port) {
-            this.port = port;
+        public Context(SelectionKey key) {
+            Objects.requireNonNull(key);
+            this.dc = (DatagramChannel) key.channel();
+            this.key = key;
+        }
+
+        public void doRead() throws  IOException {
+            buff.clear();
+            exp = (InetSocketAddress) dc.receive(buff);
+            buff.flip();
+            if (exp != null) {
+                key.interestOps(SelectionKey.OP_WRITE);
+            }
+            else {
+                logger.warning("Selector gave a bad hint (OP_WRITE)");
+            }
+        }
+
+        public void doWrite() throws IOException {
+            dc.send(buff, exp);
+            if (! buff.hasRemaining()) {
+                key.interestOps(SelectionKey.OP_READ);
+            }
+            else {
+                logger.warning("Selector gave a bad hint (OP_READ)");
+            }
         }
     }
 
     private final Selector selector;
-    private final HashMap<Integer, DatagramChannel> dcMap = new HashMap<>();
     private final int beginPort, endPort;
 
     public ServerEchoMultiPort(int beginPort, int endPort) throws IOException {
@@ -40,8 +63,8 @@ public class ServerEchoMultiPort {
             DatagramChannel dc = DatagramChannel.open();
             dc.bind(new InetSocketAddress(port));
             dc.configureBlocking(false);
-            dc.register(selector, SelectionKey.OP_READ, new Context(port));
-            dcMap.put(port, dc);
+            SelectionKey key = dc.register(selector, SelectionKey.OP_READ);
+            key.attach(new Context(key));
         }
     }
 
@@ -59,39 +82,22 @@ public class ServerEchoMultiPort {
     private void treatKey(SelectionKey key){
         try {
             if (key.isValid() && key.isWritable()) {
-                doWrite(key);
+               Context ctx = (Context) key.attachment();
+               ctx.doWrite();
             }
             if (key.isValid() && key.isReadable()) {
-                doRead(key);
+                Context ctx = (Context) key.attachment();
+                ctx.doRead();
             }
         } catch(IOException e) {
             throw new UncheckedIOException(e);
         }
     }
 
-    private void doRead(SelectionKey key) throws IOException {
-        var context = (Context) key.attachment();
-        context.buff.clear();
-        context.exp = dcMap.get(context.port).receive(context.buff);
-        if (context.exp == null) {
-            return;
-        }
-        context.buff.flip();
-        key.interestOps(SelectionKey.OP_WRITE);
-    }
-
-    private void doWrite(SelectionKey key) throws IOException {
-        var context = (Context) key.attachment();
-        dcMap.get(context.port).send(context.buff, context.exp);
-        if (context.buff.hasRemaining()) {
-            return;
-        }
-        key.interestOps(SelectionKey.OP_READ);
-    }
-
     public static void usage() {
         System.out.println("Usage : ServerEchoMultiPort <beginning_port> <ending_port>");
     }
+
     public static void main(String[] args) throws IOException {
         if (args.length != 2) {
             usage();
