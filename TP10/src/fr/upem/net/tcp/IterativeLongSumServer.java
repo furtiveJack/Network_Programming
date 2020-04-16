@@ -55,20 +55,28 @@ public class IterativeLongSumServer {
      * @throws InterruptedException
      */
     private void serve(SocketChannel sc) throws IOException, InterruptedException{
-   	    var buffer = ByteBuffer.allocate(BUFFER_SIZE);
    	    while (true) {
-   	        System.out.println("serving  client");
+            var buffer = ByteBuffer.allocate(Integer.BYTES);
+            System.out.println("serving  client");
             if (!readFully(sc, buffer)) {
                 logger.info("Client closed the connection.");
                 return;
             }
             try {
                 System.out.println("Reading received data");
+                buffer.flip();
                 var nbOp = buffer.getInt();
+                System.out.println("nbop received : " + nbOp);
                 if (nbOp <= 0) {
-                    logger.warning("Client does not respect the LongSum protocol");
+                    logger.warning("Client sent an invalid number of operands");
                     return;
                 }
+                buffer = ByteBuffer.allocate(nbOp * Long.BYTES);
+                if (! readFully(sc, buffer)) {
+                    logger.info("Client closed the connection.");
+                    return;
+                }
+                buffer.flip();
                 long sum = 0;
                 for (int i = 0; i < nbOp; ++i) {
                     sum += buffer.getLong();
@@ -99,8 +107,6 @@ public class IterativeLongSumServer {
         }
     }
 
-
-
     static boolean readFully(SocketChannel sc, ByteBuffer bb) throws IOException {
         while(bb.hasRemaining()) {
             System.out.println("reading...");
@@ -112,8 +118,22 @@ public class IterativeLongSumServer {
         return true;
     }
 
+    public static void usage() {
+        System.out.println("**usage**: java IterativeLongSumServer.java <port_number>");
+    }
+
     public static void main(String[] args) throws NumberFormatException, IOException {
+        if (args.length != 1) {
+            usage();
+            return;
+        }
         IterativeLongSumServer server = new IterativeLongSumServer(Integer.parseInt(args[0]));
         server.launch();
     }
 }
+
+/*
+3 clients peuvent être connectés en même temps au serveur car le système d'exploitation va accepter leur connexions,
+et les placer en pending connections. Ainsi, le serveur peut terminer de traiter le client actuel, puis une fois
+qu'il a finit, accepter la pending connection suivante et la traiter.
+*/
