@@ -6,7 +6,7 @@ import java.util.Objects;
 
 public class ThreadData {
     private final Object lock = new Object();
-    private SocketChannel client;
+    private SocketChannel client = null;
     private long lastAction;
 
     public ThreadData() {
@@ -33,7 +33,6 @@ public class ThreadData {
                 return false;
             }
             if (System.currentTimeMillis() - lastAction >= timeout) {
-                System.out.println("*** Closing client ***");
                 close();
                 return true;
             }
@@ -44,13 +43,19 @@ public class ThreadData {
     public void close() {
         synchronized (lock) {
             try {
-                if (this.client != null) {
-                    this.client.close();
-                    this.client = null;
+                if (client != null) {
+                    client.close();
+                    client = null;
                 }
             } catch (IOException ioe) {
-                // Do nothing
+                client = null;
             }
+        }
+    }
+
+    public boolean isClientConnected() {
+        synchronized (lock) {
+            return client != null;
         }
     }
 
