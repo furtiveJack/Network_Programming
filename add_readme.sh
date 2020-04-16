@@ -9,7 +9,7 @@ do
 		id="0${id}"
 	fi
 	touch README.md
-	echo -e "#[SUJET](http://www-igm.univ-mlv.fr/~carayol/coursprogreseauINFO2/tds/td${id}.html)" >> README.md
+	echo -e "[SUJET](http://www-igm.univ-mlv.fr/~carayol/coursprogreseauINFO2/tds/td${id}.html)" >> README.md
 	cd ..
 done
 
