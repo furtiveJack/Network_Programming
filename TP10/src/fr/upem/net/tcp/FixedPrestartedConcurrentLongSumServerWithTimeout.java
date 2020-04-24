@@ -19,8 +19,9 @@ public class FixedPrestartedConcurrentLongSumServerWithTimeout {
 
     private final ServerSocketChannel ssc;
     private final ArrayList<Thread> threads;
+    private final ArrayList<ThreadData> threadsData;
     private final int maxClient;
-    private final HashMap<Thread, ThreadData> threadsMap;
+    //private final HashMap<Thread, ThreadData> threadsMap;
     private Thread clientKiller;
     private Thread console;
 
@@ -35,7 +36,8 @@ public class FixedPrestartedConcurrentLongSumServerWithTimeout {
         ssc.bind(new InetSocketAddress(port));
         this.maxClient = maxClient;
         threads = new ArrayList<>(maxClient);
-        threadsMap = new HashMap<>();
+        threadsData = new ArrayList<>(maxClient);
+        //threadsMap = new HashMap<>();
         logger.info("*** Server started on port " + port
                 + " with maxClient fixed to " + maxClient);
     }
@@ -46,7 +48,7 @@ public class FixedPrestartedConcurrentLongSumServerWithTimeout {
      * Once the connexion is open, allows the client to ask the server a sum to compute.
      */
     private void run() {
-        var data = threadsMap.get(Thread.currentThread());
+        var data = threadsData.get(threads.indexOf(Thread.currentThread()));
         while (! Thread.interrupted()) {
             SocketChannel client;
             try {
@@ -79,8 +81,10 @@ public class FixedPrestartedConcurrentLongSumServerWithTimeout {
 //                logger.info("*** clientKiller thread has been interrupted *** ");
                 return;
             }
-            for (var t : threads) {
-                var data = threadsMap.get(t);
+
+            for (var i = 0 ; i < maxClient ; ++i) {
+                var data = threadsData.get(i);
+                var t = threads.get(i);
                 if (data.closeIfInactive(TIMEOUT)) {
                     logger.info("*** " + t.getName() + " client has been closed due to timeout ***");
                 }
@@ -128,9 +132,9 @@ public class FixedPrestartedConcurrentLongSumServerWithTimeout {
         for (int i = 0 ; i < maxClient ; ++i) {
             var t = new Thread(this::run);
             threads.add(t);
-            threadsMap.put(t, new ThreadData());
-            t.start();
+            threadsData.add(new ThreadData());
         }
+        threads.forEach(Thread::start);
         clientKiller = new Thread(this::killClients);
         clientKiller.start();
         console = new Thread(this::readCommands);
@@ -140,8 +144,8 @@ public class FixedPrestartedConcurrentLongSumServerWithTimeout {
 
     private int countConnectedClients() {
         int count = 0;
-        for (var t : threads) {
-            if (threadsMap.get(t).isClientConnected()) {
+        for (var i = 0 ; i < maxClient ; ++i) {
+            if (threadsData.get(i).isClientConnected()) {
                 count++;
             }
         }
@@ -161,8 +165,9 @@ public class FixedPrestartedConcurrentLongSumServerWithTimeout {
 
     private int shutdownNonWorkingThreads() {
         int count = 0;
-        for (var t : threads) {
-            if (! threadsMap.get(t).isClientConnected()) {
+        for (var i = 0 ; i < maxClient ; ++i) {
+            var t = threads.get(i);
+            if (! threadsData.get(i).isClientConnected()) {
                 t.interrupt();
                 count++;
             }
@@ -270,8 +275,9 @@ public class FixedPrestartedConcurrentLongSumServerWithTimeout {
         } catch (InterruptedException e) {
             logger.info("Thread has been interrupted");
         }
-        for (var t : server.threads) {
-            var data = server.threadsMap.get(t);
+        for (var i = 0 ; i < server.maxClient ; ++i) {
+            var t = server.threads.get(i);
+            var data = server.threadsData.get(i);
             if (data.isClientConnected()) {
                 logger.info("\nThere is still a connected client\n");
             }
