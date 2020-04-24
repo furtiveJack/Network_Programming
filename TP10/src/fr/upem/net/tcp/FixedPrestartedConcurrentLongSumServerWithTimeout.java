@@ -5,11 +5,13 @@ import java.net.InetSocketAddress;
 import java.nio.BufferUnderflowException;
 import java.nio.ByteBuffer;
 import java.nio.channels.AsynchronousCloseException;
+import java.nio.channels.ClosedByInterruptException;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Scanner;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 public class FixedPrestartedConcurrentLongSumServerWithTimeout {
@@ -21,7 +23,6 @@ public class FixedPrestartedConcurrentLongSumServerWithTimeout {
     private final ArrayList<Thread> threads;
     private final ArrayList<ThreadData> threadsData;
     private final int maxClient;
-    //private final HashMap<Thread, ThreadData> threadsMap;
     private Thread clientKiller;
     private Thread console;
 
@@ -48,24 +49,29 @@ public class FixedPrestartedConcurrentLongSumServerWithTimeout {
      * Once the connexion is open, allows the client to ask the server a sum to compute.
      */
     private void run() {
-        var data = threadsData.get(threads.indexOf(Thread.currentThread()));
-        while (! Thread.interrupted()) {
-            SocketChannel client;
-            try {
-                client = ssc.accept();
-                logger.info("*** Connection accepted from client : " + client.getRemoteAddress() + " ***");
+        try {
+            var data = threadsData.get(threads.indexOf(Thread.currentThread()));
+            while (!Thread.interrupted()) {
+                SocketChannel client = ssc.accept();
                 data.setSocketChannel(client);
-                serve(client, data);
-            } catch (AsynchronousCloseException e) {
-                data.close();
-            } catch (IOException e) {
-                logger.info("*** " + Thread.currentThread().getName() + " : Connection terminated" +
-                                " with client by IOException ***");
-            } finally {
-                data.close();
+                try {
+                    logger.info("*** Connection accepted from client : " + client.getRemoteAddress() + " ***");
+                    serve(client, data);
+                } catch (ClosedByInterruptException e) {
+                    logger.info("Worker thread was asked to stop");
+                    return;
+                } catch (IOException e) {
+                    logger.info("*** " + Thread.currentThread().getName() + " : Connection terminated" +
+                            " with client by IOException ***");
+                } finally {
+                    data.close();
+                }
             }
+        } catch (AsynchronousCloseException e) {
+            logger.info("Worker thread has been stopped");
+        } catch (IOException e) {
+            logger.log(Level.SEVERE, "Worker thread has been stopped. ", e.getCause());
         }
-        data.close();
 //        logger.info("*** Worker" + Thread.currentThread().getName() + " has been interrupted ***");
     }
 
@@ -74,23 +80,14 @@ public class FixedPrestartedConcurrentLongSumServerWithTimeout {
      * client thread is connected to an inactive client. If so, the connexion with this client is closed.
      */
     private void killClients()  {
-        while (! Thread.interrupted()) {
-            try {
+        try {
+            while (! Thread.interrupted()) {
                 Thread.sleep(TIMEOUT);
-            } catch (InterruptedException e) {
-//                logger.info("*** clientKiller thread has been interrupted *** ");
-                return;
+                threadsData.forEach(td -> td.closeIfInactive(TIMEOUT));
             }
-
-            for (var i = 0 ; i < maxClient ; ++i) {
-                var data = threadsData.get(i);
-                var t = threads.get(i);
-                if (data.closeIfInactive(TIMEOUT)) {
-                    logger.info("*** " + t.getName() + " client has been closed due to timeout ***");
-                }
-            }
+        }catch (InterruptedException e) {
+            logger.info("*** Monitor thread has been interrupted *** ");
         }
-//        logger.info("*** clientKiller thread has been interrupted *** ");
     }
 
     /**
@@ -103,26 +100,26 @@ public class FixedPrestartedConcurrentLongSumServerWithTimeout {
      *                  and shutdown the server.
      */
     private void readCommands() {
-        var input = new Scanner(System.in);
-        while (!Thread.interrupted()) {
-            var cmd = input.nextLine();
-            switch (cmd) {
-                case "INFO":
-                    System.out.println(countConnectedClients() + " clients are currently being served");
-                    break;
-                case "SHUTDOWN":
-                    System.out.println("Shutdown " + shutdownNonWorkingThreads() + " threads that were not serving clients");
-                    break;
-                case "SHUTDOWNNOW":
-                    shutdownServer();
-                    break;
-                default:
-                    System.out.println("ERR : Unknown command.");
-                    break;
+        try (var input = new Scanner(System.in)) {
+            while (! Thread.interrupted()){
+                switch (input.nextLine()) {
+                    case "INFO":
+                        System.out.println(countConnectedClients() + " clients are currently being served");
+                        break;
+                    case "SHUTDOWN":
+                        System.out.println("Shutting down threads that were not serving clients");
+                        shutdownNonWorkingThreads();
+                        break;
+                    case "SHUTDOWNNOW":
+                        shutdownServer();
+                        break;
+                    default:
+                        System.out.println("ERR : Unknown command.");
+                        break;
+                }
             }
         }
-        input.close();
-//        logger.info("***  Console thread has been interrupted ***");
+        logger.info("*** Console thread has been stopped ***");
     }
 
     /**
@@ -163,16 +160,12 @@ public class FixedPrestartedConcurrentLongSumServerWithTimeout {
         }
     }
 
-    private int shutdownNonWorkingThreads() {
-        int count = 0;
-        for (var i = 0 ; i < maxClient ; ++i) {
-            var t = threads.get(i);
-            if (! threadsData.get(i).isClientConnected()) {
-                t.interrupt();
-                count++;
-            }
+    private void shutdownNonWorkingThreads() {
+        try {
+            ssc.close();
+        } catch (IOException e) {
+            // Ignore
         }
-        return count;
     }
 
     /**
@@ -220,28 +213,24 @@ public class FixedPrestartedConcurrentLongSumServerWithTimeout {
                 logger.info("*** Client closed the connection. ***");
                 return;
             }
-            try {
-                var nbOp = -1;
-                if ((nbOp = readNbOp(buffer)) == -1) {
-                    logger.warning("Client sent an invalid number of operands");
-                    return;
-                }
-                client.tick();
-                buffer = ByteBuffer.allocate(nbOp * Long.BYTES);
-                if (! readFully(sc, buffer)) {
-                    logger.info("*** Client closed the connection. ***");
-                    client.close();
-                    return;
-                }
-                var sum = getAndComputeSum(buffer, nbOp);
-                client.tick();
-                var sendBuff = ByteBuffer.allocate(Long.BYTES);
-                sendBuff.putLong(sum);
-                sc.write(sendBuff.flip());
-            } catch (BufferUnderflowException e) {
-                logger.warning("*** Client does not respect the LongSum protocol ***");
+            client.tick();
+            var nbOp = -1;
+            if ((nbOp = readNbOp(buffer)) == -1) {
+                logger.warning("Client sent an invalid number of operands");
                 return;
             }
+            buffer = ByteBuffer.allocate(nbOp * Long.BYTES);
+            if (!readFully(sc, buffer)) {
+                logger.info("*** Client closed the connection. ***");
+                client.close();
+                return;
+            }
+            client.tick();
+            var sum = getAndComputeSum(buffer, nbOp);
+            var sendBuff = ByteBuffer.allocate(Long.BYTES);
+            sendBuff.putLong(sum);
+            sc.write(sendBuff.flip());
+            client.tick();
         }
     }
 
@@ -274,13 +263,6 @@ public class FixedPrestartedConcurrentLongSumServerWithTimeout {
             }
         } catch (InterruptedException e) {
             logger.info("Thread has been interrupted");
-        }
-        for (var i = 0 ; i < server.maxClient ; ++i) {
-            var t = server.threads.get(i);
-            var data = server.threadsData.get(i);
-            if (data.isClientConnected()) {
-                logger.info("\nThere is still a connected client\n");
-            }
         }
         System.out.println("Server has been shutdown");
     }
