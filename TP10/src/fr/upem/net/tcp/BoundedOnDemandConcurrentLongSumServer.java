@@ -27,21 +27,19 @@ public class BoundedOnDemandConcurrentLongSumServer {
                 + " with maxClient fixed to " + maxClient);
     }
 
-    public void launch() throws IOException {
+    public void launch() throws IOException, InterruptedException {
         while (! Thread.interrupted()) {
+            semaphore.acquire();
             SocketChannel client = serverSocketChannel.accept();
             new Thread(() -> {
                 try {
-                    semaphore.acquire();
                     logger.info("Connection accepted from " + client.getRemoteAddress());
                     serve(client);
-                    semaphore.release();
                 } catch (IOException ioe) {
                     logger.log(Level.INFO, "Connection ended with client by IOException", ioe.getCause());
-                } catch (InterruptedException ie) {
-                    logger.log(Level.INFO, "Connection terminated with client by InterruptedException", ie.getCause());
                 } finally {
                     silentlyClose(client);
+                    semaphore.release();
                 }
             }).start();
         }
@@ -112,7 +110,7 @@ public class BoundedOnDemandConcurrentLongSumServer {
         System.out.println("**usage**: java OnDemandConcurrentLongSumServer.java <port_number> <max_client");
     }
 
-    public static void main(String[] args) throws NumberFormatException, IOException {
+    public static void main(String[] args) throws NumberFormatException, IOException, InterruptedException {
         if (args.length != 2) {
             usage();
             return;
