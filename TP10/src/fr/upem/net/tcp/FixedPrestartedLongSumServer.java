@@ -11,7 +11,6 @@ import java.util.logging.Logger;
 
 public class FixedPrestartedLongSumServer {
     private final static Logger logger = Logger.getLogger(FixedPrestartedLongSumServer.class.getName());
-    private final static int BUFFER_SIZE = 1024;
 
     private final ServerSocketChannel ssc;
     private final int maxClient;
@@ -45,6 +44,7 @@ public class FixedPrestartedLongSumServer {
         }
         System.out.println("Thread " + Thread.currentThread() + " has been stopped !!!!!");
     }
+
     public void launch() throws IOException {
         for (int i = 0 ; i < maxClient ; ++i) {
             var t = new Thread(this::run);
