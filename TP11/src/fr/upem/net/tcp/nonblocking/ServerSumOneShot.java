@@ -41,8 +41,6 @@ public class ServerSumOneShot {
 
 	private void treatKey(SelectionKey key) {
 		printSelectedKey(key); // for debug
-		// Pour les exceptions serveurs : on veut fermer le serveur
-		// recaster les exceptions à runTime (unchecked exception -> la rattraper dans le select)
 		if (key.isValid() && key.isAcceptable()) {
 			try {
 				doAccept(key);
@@ -51,7 +49,6 @@ public class ServerSumOneShot {
 			}
 		}
 		try {
-			// Pour les exceptions clients : on ferme la connection avec le client
 			if (key.isValid() && key.isWritable()) {
 				doWrite(key);
 			}
@@ -76,28 +73,29 @@ public class ServerSumOneShot {
 	private void doRead(SelectionKey key) throws IOException {
 		var sc = (SocketChannel) key.channel();
 		var bb = (ByteBuffer) key.attachment();
-		while (bb.hasRemaining()) {
-			if (sc.read(bb) == -1) {
-				break;
-			}
-		}
+        if (sc.read(bb) == -1) {
+            logger.info("Client closed connexion before sending everything");
+            silentlyClose(key); // le client ne respecte pas le protocole.
+            return;
+        }
 		if (bb.hasRemaining()) {
-			silentlyClose(key); // le client ne respecte pas le protocole.
-			return;
+            return;
 		}
 		bb.flip();
 		var op1 = bb.getInt();
 		var op2 = bb.getInt();
 		bb.clear();
-		bb.putInt(op1 + op2).flip();
+		bb.putInt(op1 + op2);
 		key.interestOps(SelectionKey.OP_WRITE);
 	}
 
 	private void doWrite(SelectionKey key) throws IOException {
 		var sc = (SocketChannel) key.channel();
 		var bb = (ByteBuffer) key.attachment();
+		bb.flip();
 		sc.write(bb);
-		if (bb.remaining() > Integer.BYTES) {
+		bb.compact();
+		if (bb.position() != 0) {
 			return;
 		}
 		silentlyClose(key);

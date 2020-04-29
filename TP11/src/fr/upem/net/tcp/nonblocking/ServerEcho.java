@@ -7,17 +7,91 @@ import java.nio.ByteBuffer;
 import java.nio.channels.*;
 import java.util.ArrayList;
 import java.util.Set;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
-public class ServerSum {
+public class ServerEcho {
 
-	static private int BUFFER_SIZE = 2*Integer.BYTES;
-	static private Logger logger = Logger.getLogger(ServerSum.class.getName());
+	static private class Context {
+
+		final private SelectionKey key;
+		final private SocketChannel sc;
+		final private ByteBuffer bb = ByteBuffer.allocate(BUFFER_SIZE);
+		private boolean closed = false;
+
+		private Context(SelectionKey key){
+			this.key = key;
+			this.sc = (SocketChannel) key.channel();
+		}
+
+		/**
+		 * Update the interestOps of the key looking
+		 * only at values of the boolean closed and
+		 * the ByteBuffer buff.
+		 *
+		 * The convention is that buff is in write-mode.
+		 */
+		private void updateInterestOps() {
+			var opt = 0;
+			if (! closed && bb.hasRemaining()) {
+				opt |= SelectionKey.OP_READ;
+			}
+			if (bb.position() != 0) {
+				opt |= SelectionKey.OP_WRITE;
+			}
+			if (opt == 0) {
+				silentlyClose();
+				return;
+			}
+			key.interestOps(opt);
+		}
+
+		/**
+		 * Performs the read action on sc
+		 *
+		 * The convention is that buff is in write-mode before calling doRead
+		 * and is in write-mode after calling doRead
+		 *
+		 * @throws IOException
+		 */
+		private void doRead() throws IOException {
+			if (sc.read(bb) == -1) {
+				closed = true;
+			}
+			updateInterestOps();
+		}
+
+		/**
+		 * Performs the write action on sc
+		 *
+		 * The convention is that buff is in write-mode before calling doWrite
+		 * and is in write-mode after calling doWrite
+		 *
+		 * @throws IOException
+		 */
+		private void doWrite() throws IOException {
+			bb.flip();
+			sc.write(bb);
+			bb.compact();
+			updateInterestOps();
+		}
+
+		private void silentlyClose() {
+			try {
+				sc.close();
+			} catch (IOException e) {
+				// ignore exception
+			}
+		}
+	}
+
+	static private int BUFFER_SIZE = 1_024;
+	static private Logger logger = Logger.getLogger(ServerEcho.class.getName());
 
 	private final ServerSocketChannel serverSocketChannel;
 	private final Selector selector;
 
-	public ServerSum(int port) throws IOException {
+	public ServerEcho(int port) throws IOException {
 		serverSocketChannel = ServerSocketChannel.open();
 		serverSocketChannel.bind(new InetSocketAddress(port));
 		selector = Selector.open();
@@ -26,13 +100,13 @@ public class ServerSum {
 	public void launch() throws IOException {
 		serverSocketChannel.configureBlocking(false);
 		serverSocketChannel.register(selector, SelectionKey.OP_ACCEPT);
-		while (!Thread.interrupted()) {
+		while(!Thread.interrupted()) {
 			printKeys(); // for debug
 			System.out.println("Starting select");
 			try {
 				selector.select(this::treatKey);
-			} catch (UncheckedIOException e) {
-				throw new IOException("An unexpected error occurred", e.getCause());
+			} catch (UncheckedIOException tunneled) {
+				throw tunneled.getCause();
 			}
 			System.out.println("Select finished");
 		}
@@ -40,21 +114,23 @@ public class ServerSum {
 
 	private void treatKey(SelectionKey key) {
 		printSelectedKey(key); // for debug
-		if (key.isValid() && key.isAcceptable()) {
-			try {
+		try {
+			if (key.isValid() && key.isAcceptable()) {
 				doAccept(key);
-			} catch (IOException e) {
-				throw new UncheckedIOException(e);
 			}
+		} catch(IOException ioe) {
+			// lambda call in select requires to tunnel IOException
+			throw new UncheckedIOException(ioe);
 		}
 		try {
 			if (key.isValid() && key.isWritable()) {
-				doWrite(key);
+				((Context) key.attachment()).doWrite();
 			}
 			if (key.isValid() && key.isReadable()) {
-				doRead(key);
+				((Context) key.attachment()).doRead();
 			}
 		} catch (IOException e) {
+			logger.log(Level.INFO,"Connection closed with client due to IOException",e);
 			silentlyClose(key);
 		}
 	}
@@ -66,38 +142,8 @@ public class ServerSum {
 			return;
 		}
 		sc.configureBlocking(false);
-		sc.register(selector, SelectionKey.OP_READ, ByteBuffer.allocate(BUFFER_SIZE));
-	}
-
-	private void doRead(SelectionKey key) throws IOException {
-		var sc = (SocketChannel) key.channel();
-		var bb = (ByteBuffer) key.attachment();
-		if (sc.read(bb) == -1) {
-			silentlyClose(key); // le client ne respecte pas le protocole.
-			return;
-		}
-		if (bb.hasRemaining()) {
-			return;
-		}
-		bb.flip();
-		var op1 = bb.getInt();
-		var op2 = bb.getInt();
-		bb.clear();
-		bb.putInt(op1 + op2);
-		key.interestOps(SelectionKey.OP_WRITE);
-	}
-
-	private void doWrite(SelectionKey key) throws IOException {
-		var sc = (SocketChannel) key.channel();
-		var bb = (ByteBuffer) key.attachment();
-		bb.flip();
-		sc.write(bb);
-		bb.compact();
-		if (bb.position() != 0) {
-			return;
-		}
-		key.interestOps(SelectionKey.OP_READ);
-		bb.clear();
+		var clientKey = sc.register(selector, SelectionKey.OP_READ);
+		clientKey.attach(new Context(clientKey));
 	}
 
 	private void silentlyClose(SelectionKey key) {
@@ -114,11 +160,11 @@ public class ServerSum {
 			usage();
 			return;
 		}
-		new ServerSum(Integer.parseInt(args[0])).launch();
+		new ServerEcho(Integer.parseInt(args[0])).launch();
 	}
 
 	private static void usage(){
-		System.out.println("Usage : ServerSumOneShot port");
+		System.out.println("Usage : ServerEcho port");
 	}
 
 	/***
