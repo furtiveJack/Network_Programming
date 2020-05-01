@@ -36,7 +36,7 @@ public class StringReader implements Reader<String> {
             if (status == ProcessStatus.REFILL || status == ProcessStatus.ERROR) {
                 return status;
             }
-            if (dataSize > BUFFER_SIZE || dataSize <= 0) {
+            if (dataSize > BUFFER_SIZE || dataSize < 0) {
                 return ProcessStatus.ERROR;
             }
             internalbb.limit(dataSize);
