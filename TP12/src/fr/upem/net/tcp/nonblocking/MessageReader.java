@@ -15,32 +15,32 @@ public class MessageReader implements Reader<Message> {
         if (state == State.DONE || state == State.ERROR) {
             throw new IllegalStateException();
         }
-        else if (state == State.WAITING_LOGIN) {
+        if (state == State.WAITING_LOGIN) {
             var status = reader.process(bb);
-            if (status == ProcessStatus.DONE) {
-                message.setLogin(reader.get());
-                message.setLoginSize(reader.getStringSize());
-                reader.reset();
-                state = State.WAITING_TEXT;
-                return ProcessStatus.REFILL;
-            }
-            else {
+            if (status != ProcessStatus.DONE) {
                 return status;
             }
+            message.setLogin(reader.get());
+            message.setLoginSize(reader.getStringSize());
+            reader.reset();
+//            System.out.println("Parsed login : " + message.getLogin() + " SIZE : " + message.getLoginSize());
+            state = State.WAITING_TEXT;
         }
-        else { // state == WAITING_TEXT
+        if (state == State.WAITING_TEXT) {
             var status = reader.process(bb);
-            if (status == ProcessStatus.DONE) {
-                message.setMessage(reader.get());
-                message.setMessageSize(reader.getStringSize());
-                reader.reset();
-                state = State.DONE;
-                return ProcessStatus.DONE;
-            }
-            else {
+            if (status != ProcessStatus.DONE) {
                 return status;
             }
+            message.setText(reader.get());
+            message.setTextSize(reader.getStringSize());
+            reader.reset();
+//            System.out.println("Parsed text : " + message.getText() + " SIZE : " + message.getTextSize());
+            state = State.DONE;
         }
+        if (state == State.DONE) {
+            return ProcessStatus.DONE;
+        }
+        return ProcessStatus.ERROR; // this shouldn't happen
     }
 
     @Override
