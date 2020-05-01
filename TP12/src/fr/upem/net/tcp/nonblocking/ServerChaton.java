@@ -50,7 +50,7 @@ public class ServerChaton {
 					case REFILL:
 						return;
 					case ERROR:
-						silentlyClose();
+						closed = true;
 						return;
 				}
 			}
@@ -79,7 +79,7 @@ public class ServerChaton {
 				}
         		bbout.putInt(msg.getLoginSize());
         		bbout.put(msg.getLoginBytes());
-        		bbout.putInt(msg.getMessageSize());
+        		bbout.putInt(msg.getTextSize());
         		bbout.put(msg.getMessageBytes());
 			}
         }
@@ -103,11 +103,11 @@ public class ServerChaton {
         	if (bbout.position() != 0) {
         		opt |= SelectionKey.OP_WRITE;
 			}
-        	if (closed && ! bbout.hasRemaining()) {
+        	if (opt == 0) {
         		silentlyClose();
-        		return;
+			} else {
+				key.interestOps(opt);
 			}
-        	key.interestOps(opt);
         }
 
         /**
@@ -147,7 +147,7 @@ public class ServerChaton {
 			try {
 				sc.close();
 			} catch (IOException e) {
-				// ignore exception
+				// ignore
 			}
 		}
 
@@ -169,19 +169,19 @@ public class ServerChaton {
 		serverSocketChannel.configureBlocking(false);
 		serverSocketChannel.register(selector, SelectionKey.OP_ACCEPT);
 		while(!Thread.interrupted()) {
-			printKeys(); // for debug
-			System.out.println("Starting select");
+//			printKeys(); // for debug
+//			System.out.println("Starting select");
 			try {
 				selector.select(this::treatKey);
 			} catch (UncheckedIOException tunneled) {
 				throw tunneled.getCause();
 			}
-			System.out.println("Select finished");
+//			System.out.println("Select finished");
 		}
     }
 
 	private void treatKey(SelectionKey key) {
-		printSelectedKey(key); // for debug
+//		printSelectedKey(key); // for debug
 		try {
 			if (key.isValid() && key.isAcceptable()) {
 				doAccept(key);
