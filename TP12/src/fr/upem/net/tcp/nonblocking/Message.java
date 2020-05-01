@@ -8,38 +8,46 @@ public class Message {
     private final static Charset UTF8 = StandardCharsets.UTF_8;
     private String login;
     private int loginSize;
-    private String message;
-    private int messageSize;
+    private String text;
+    private int textSize;
 
     public ByteBuffer getLoginBytes() {
         return UTF8.encode(login);
     }
 
     public ByteBuffer getMessageBytes() {
-        return UTF8.encode(message);
+        return UTF8.encode(text);
     }
 
     public void setLogin(String login) {
         this.login = login;
     }
 
-    public void setMessage(String message) {
-        this.message = message;
-    }
-
-    public int getLoginSize() {
-        return loginSize;
-    }
-
     public void setLoginSize(int loginSize) {
         this.loginSize = loginSize;
     }
 
-    public int getMessageSize() {
-        return messageSize;
+    public void setText(String text) {
+        this.text = text;
     }
 
-    public void setMessageSize(int messageSize) {
-        this.messageSize = messageSize;
+    public void setTextSize(int textSize) {
+        this.textSize = textSize;
+    }
+
+    public String getLogin() {
+        return login;
+
+    }
+    public int getLoginSize() {
+        return loginSize;
+    }
+
+    public String getText() {
+        return text;
+    }
+
+    public int getTextSize() {
+        return textSize;
     }
 }
