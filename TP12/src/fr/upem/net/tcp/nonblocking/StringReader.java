@@ -67,14 +67,14 @@ public class StringReader implements Reader<String> {
     @Override
     public String get() {
         if (state != State.DONE) {
-            throw new IllegalArgumentException();
+            throw new IllegalStateException();
         }
         return text;
     }
 
     public int getStringSize() {
         if (state != State.DONE) {
-            throw new IllegalArgumentException();
+            throw new IllegalStateException();
         }
         return dataSize;
     }
