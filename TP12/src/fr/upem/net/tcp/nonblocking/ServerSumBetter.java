@@ -34,7 +34,7 @@ public class ServerSumBetter {
 		**/
         private void process() {
             bbin.flip();
-			while (bbin.remaining() >= BUFFER_SIZE) {
+			while (bbin.remaining() >= 2 * Integer.BYTES) {
 				if (! bbout.hasRemaining()) {
 					break;
 				}
@@ -108,7 +108,7 @@ public class ServerSumBetter {
 		}
 	}
 
-    static private int BUFFER_SIZE = 2*Integer.BYTES;
+    static private int BUFFER_SIZE = 1024;
     static private Logger logger = Logger.getLogger(ServerSumBetter.class.getName());
 
     private final ServerSocketChannel serverSocketChannel;
